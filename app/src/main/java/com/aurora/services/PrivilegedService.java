@@ -137,14 +137,6 @@ public class PrivilegedService extends Service {
         }
     };
 
-    public static boolean isAvailable() {
-        try {
-            return instance != null;
-        } catch (NullPointerException e) {
-            return false;
-        }
-    }
-
     @Override
     public void onCreate() {
         super.onCreate();

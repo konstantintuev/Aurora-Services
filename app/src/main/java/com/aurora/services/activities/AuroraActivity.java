@@ -4,6 +4,8 @@ import android.Manifest;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.os.UserHandle;
+import android.os.UserManager;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -17,6 +19,7 @@ import androidx.fragment.app.FragmentManager;
 import com.aurora.services.R;
 import com.aurora.services.sheet.LogSheet;
 import com.aurora.services.sheet.WhitelistSheet;
+import com.aurora.services.utils.Log;
 
 import butterknife.BindView;
 import butterknife.ButterKnife;

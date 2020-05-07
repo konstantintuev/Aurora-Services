@@ -70,6 +70,8 @@ public class WhitelistManager {
             stringList = new ArrayList<>();
         }
 
+        stringList.add("com.aurora.battery");
+
         return stringList;
     }
 }

@@ -3,5 +3,10 @@
     <privapp-permissions package="com.aurora.services">
         <permission name="android.permission.DELETE_PACKAGES" />
         <permission name="android.permission.INSTALL_PACKAGES" />
+        <permission name="android.permission.WRITE_SETTINGS" />
+        <permission name="android.permission.WRITE_SECURE_SETTINGS" />
+        <permission name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+        <permission name="android.permission.MODIFY_PHONE_STATE" />
+        <permission name="android.permission.DEVICE_POWER" />
     </privapp-permissions>
 </permissions>
