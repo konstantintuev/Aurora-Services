@@ -41,14 +41,18 @@ public class AuroraActivity extends AppCompatActivity {
         setContentView(R.layout.activity_aurora);
         ButterKnife.bind(this);
         new Thread(() -> {
-            adbWifi = new AdbWifi(this);
-            if (adbWifi.exec("echo 'working'").contains("working")) {
-                new Handler(Looper.getMainLooper()).post(() -> {
-                    hasAdbWifi = true;
-                    init();
-                });
+            try {
+                adbWifi = new AdbWifi(this);
+                String res = adbWifi.exec("echo 'working'");
+                if (res != null && res.contains("working")) {
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        hasAdbWifi = true;
+                        init();
+                    });
+                }
+            } finally {
+                adbWifi.terminate();
             }
-            adbWifi.terminate();
         }).start();
         init();
     }

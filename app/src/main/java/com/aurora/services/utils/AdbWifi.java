@@ -82,8 +82,26 @@ public class AdbWifi {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }*/
-            while (!getDevices(context)) {
+            int tries = 125;
+            int triesNoDevices = 10;
+            Boolean hasDevice = Boolean.FALSE;
+            while ((hasDevice == Boolean.FALSE && tries > 0)
+                    || (hasDevice == null && triesNoDevices > 0)) {
                 Thread.sleep(1000);
+                if (hasDevice == Boolean.FALSE) {
+                    tries--;
+                }
+                if (hasDevice == null) {
+                    triesNoDevices--;
+                }
+                Log.w(TAG, "triesNoDevices: "+triesNoDevices+" tries: "+tries);
+                hasDevice = getDevices(context);
+            }
+            if (tries <= 0 || hasDevice == null) {
+                Log.w(TAG, "failed check");
+                mIsAcquired = false;
+                mIsTerminated = true;
+                return;
             }
             mIsAcquired = true;
             mSuProcess = buildProcessWithEnv(context.getFilesDir()+"/adb shell", context.getFilesDir()).start();
@@ -99,7 +117,7 @@ public class AdbWifi {
         }
     }
 
-    public boolean getDevices(Context context) {
+    public Boolean getDevices(Context context) {
         try {
             Process proc = buildProcessWithEnv(context.getFilesDir() + "/adb devices", context.getFilesDir()).start();
 
@@ -125,6 +143,9 @@ public class AdbWifi {
                 out.append(s+"\n");
             }
             String res = out.toString();
+            if (!res.contains("\t")) {
+                return null;
+            }
             if (res.contains("\tdevice")) {
                 return true;
             }
