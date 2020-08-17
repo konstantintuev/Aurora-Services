@@ -2,11 +2,11 @@
 
 # Aurora Services: Seamless installation of apps from Aurora Store / Droid
 
-Aurora Services is a system / root application that integrates with the Aurora line of products to simplify the installation of downloaded applications.
+Aurora Services is a user application that integrates with the Aurora line of products to simplify the installation of downloaded applications.
 
 Aurora Services is currently in developement, but all features listed here work without any hiccups.
 
-[***Link to Releases page***](https://gitlab.com/AuroraOSS/AuroraServices/-/releases)
+[***Link to Releases page***](https://gitlab.com/konstantintuev/AuroraServices/-/releases)
 
 # Features
 
@@ -18,14 +18,7 @@ Aurora Services is currently in developement, but all features listed here work 
 
 # Installation
 
-1. Install Aurora Services as a system app.
-   - You need to either manually push [the APK](https://gitlab.com/AuroraOSS/AuroraServices/-/releases) to `/system/priv-app`, or install the [Magisk module](https://gitlab.com/AuroraOSS/AuroraServices/-/releases). Both are available from the GitLab releases page.
-   - Also if you manually push apk to `/system/priv-app`, you need to push [permissions_com.aurora.services.xml](https://gitlab.com/AuroraOSS/AuroraServices/raw/master/app/src/main/assets/permissions_com.aurora.services.xml) to  `/system/etc/permissions/`
-
-2. Provided you have rebooted your device, open Aurora Services and follow the setup instructions, granting the required permissions.
-
-3. Open Aurora Store / Droid and enable Aurora Services as the installation method.
-   - `Settings -> Installations -> Installation method -> Aurora Services`
+1. Enable Adb over TCP from a computer - `adb tcpip 5555`
 
 # Screenshot
 
@@ -33,7 +26,6 @@ Aurora Services is currently in developement, but all features listed here work 
 
 # Links
 
-* Magisk Module - [Github](https://github.com/whyorean/AuroraServices-Magisk)
 * Support Group - [Telegram](https://t.me/AuroraDroid)
 
 # Aurora Services uses the following Open Source libraries:
@@ -42,3 +34,4 @@ Aurora Services is currently in developement, but all features listed here work 
 * [ButterKnife](https://github.com/JakeWharton/butterknife)
 * [Lombok](https://projectlombok.org/)
 * [FastAdapter](https://github.com/mikepenz/FastAdapter)
+* [Adb Binary](https://github.com/rendiix/termux-adb-fastboot)
