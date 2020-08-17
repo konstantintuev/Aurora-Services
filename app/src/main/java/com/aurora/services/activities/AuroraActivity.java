@@ -1,26 +1,25 @@
 package com.aurora.services.activities;
 
 import android.Manifest;
-import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.widget.TextView;
 import android.widget.Toast;
-
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.FragmentManager;
-
-import com.aurora.services.R;
-import com.aurora.services.sheet.LogSheet;
-import com.aurora.services.sheet.WhitelistSheet;
-
 import butterknife.BindView;
 import butterknife.ButterKnife;
 import butterknife.OnClick;
+import com.aurora.services.R;
+import com.aurora.services.sheet.LogSheet;
+import com.aurora.services.sheet.WhitelistSheet;
+import com.aurora.services.utils.AdbWifi;
 import io.reactivex.disposables.CompositeDisposable;
 
 public class AuroraActivity extends AppCompatActivity {
@@ -32,13 +31,29 @@ public class AuroraActivity extends AppCompatActivity {
 
     private CompositeDisposable disposable = new CompositeDisposable();
 
+    private static AdbWifi adbWifi;
+
+    boolean hasAdbWifi = false;
+
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_aurora);
         ButterKnife.bind(this);
+        new Thread(() -> {
+            adbWifi = new AdbWifi(this);
+            if (adbWifi.exec("echo 'working'").contains("working")) {
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    hasAdbWifi = true;
+                    init();
+                });
+            }
+            adbWifi.terminate();
+        }).start();
         init();
     }
+
+
 
     @Override
     protected void onResume() {
@@ -89,8 +104,7 @@ public class AuroraActivity extends AppCompatActivity {
     }
 
     private boolean isSystemApp() {
-        return (getApplicationInfo().flags
-                & (ApplicationInfo.FLAG_SYSTEM | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0;
+        return hasAdbWifi;
     }
 
     private boolean isPermissionGranted() {
