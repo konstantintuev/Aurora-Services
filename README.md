@@ -6,7 +6,7 @@ Aurora Services is a user application that integrates with the Aurora line of pr
 
 Aurora Services is currently in developement, but all features listed here work without any hiccups.
 
-[***Link to Releases page***](https://gitlab.com/konstantintuev/AuroraServices/-/releases)
+[***Link to Releases page***](https://github.com/konstantintuev/Aurora-Services/releases)
 
 # Features
 
@@ -35,3 +35,4 @@ Aurora Services is currently in developement, but all features listed here work 
 * [Lombok](https://projectlombok.org/)
 * [FastAdapter](https://github.com/mikepenz/FastAdapter)
 * [Adb Binary](https://github.com/rendiix/termux-adb-fastboot)
+* [Tray](https://github.com/grandcentrix/tray)
