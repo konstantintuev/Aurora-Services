@@ -16,10 +16,17 @@
 
 package com.aurora.services;
 
+import android.app.Notification;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Binder;
 
+import android.widget.Toast;
+import androidx.core.app.NotificationCompat;
+import com.aurora.services.activities.AuroraActivity;
 import com.aurora.services.manager.WhitelistManager;
 import com.aurora.services.utils.Log;
 
@@ -30,8 +37,10 @@ public class AccessProtectionHelper {
 
     private PackageManager packageManager;
     private WhitelistManager whitelistManager;
+    private Context context;
 
-    public AccessProtectionHelper(Context context) {
+    public AccessProtectionHelper(Context contextIn) {
+        context = contextIn;
         this.packageManager = context.getPackageManager();
         this.whitelistManager = new WhitelistManager(context);
     }
@@ -67,6 +76,17 @@ public class AccessProtectionHelper {
             return true;
         } else {
             Log.e("Package is NOT allowed to access Aurora Services");
+            PendingIntent pendingIntent =
+                    PendingIntent.getActivity(context, 324322, new Intent(context, AuroraActivity.class),
+                            PendingIntent.FLAG_CANCEL_CURRENT);
+            Notification notification =
+                    new NotificationCompat.Builder(context, "main")
+                            .setContentTitle("The package "+packageName+" is not allowed to access Aurora Services!")
+                            .setContentText("Please whitelist it")
+                            .setSmallIcon(R.mipmap.ic_launcher)
+                            .setContentIntent(pendingIntent)
+                            .build();
+            ((NotificationManager)context.getSystemService(Context.NOTIFICATION_SERVICE)).notify(63322, notification);
             return false;
         }
     }

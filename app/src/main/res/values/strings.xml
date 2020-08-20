@@ -8,6 +8,8 @@
     <string name="perm_not_granted">Not Granted</string>
     <string name="service_enabled">Enabled</string>
     <string name="service_disabled">Disabled</string>
+    <string name="service_loading">Please wait…</string>
+    <string name="service_not_available">Permissions first -></string>
 
     <string name="title_service">Service</string>
     <string name="title_permission">Permissions</string>

@@ -1,6 +1,8 @@
 package com.aurora.services.activities;
 
 import android.Manifest;
+import android.content.DialogInterface;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Handler;
@@ -16,6 +18,7 @@ import androidx.fragment.app.FragmentManager;
 import butterknife.BindView;
 import butterknife.ButterKnife;
 import butterknife.OnClick;
+import com.aurora.services.PrivilegedService;
 import com.aurora.services.R;
 import com.aurora.services.sheet.LogSheet;
 import com.aurora.services.sheet.WhitelistSheet;
@@ -35,11 +38,20 @@ public class AuroraActivity extends AppCompatActivity {
 
     boolean hasAdbWifi = false;
 
+    boolean loadingAdbWifi = true;
+
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_aurora);
         ButterKnife.bind(this);
+        init();
+        if (isPermissionGranted()) {
+            tryInitAdbWifi();
+        }
+    }
+
+    void tryInitAdbWifi() {
         new Thread(() -> {
             try {
                 adbWifi = new AdbWifi(this);
@@ -47,6 +59,14 @@ public class AuroraActivity extends AppCompatActivity {
                 if (res != null && res.contains("working")) {
                     new Handler(Looper.getMainLooper()).post(() -> {
                         hasAdbWifi = true;
+                        loadingAdbWifi = false;
+                        startService(new Intent(this, PrivilegedService.class));
+                        init();
+                    });
+                } else {
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        hasAdbWifi = false;
+                        loadingAdbWifi = false;
                         init();
                     });
                 }
@@ -54,10 +74,7 @@ public class AuroraActivity extends AppCompatActivity {
                 adbWifi.terminate();
             }
         }).start();
-        init();
     }
-
-
 
     @Override
     protected void onResume() {
@@ -88,13 +105,35 @@ public class AuroraActivity extends AppCompatActivity {
         }
     }
 
+    @OnClick(R.id.card_status)
+    public void requestService() {
+        if (!isAdbWifiLoading() && !isAdbWifiGranted()) {
+            tryInitAdbWifi();
+        }
+    }
+
+    @OnClick(R.id.card_health)
+    public void requestPermission() {
+        if (!isPermissionGranted()) {
+            askPermissions();
+        }
+    }
+
     private void init() {
-        if (isSystemApp()) {
-            textStatus.setText(getString(R.string.service_enabled));
-            textStatus.setTextColor(getResources().getColor(R.color.colorGreen));
-        } else {
-            textStatus.setText(getString(R.string.service_disabled));
+        if (!isPermissionGranted()) {
+            textStatus.setText(getString(R.string.service_not_available));
             textStatus.setTextColor(getResources().getColor(R.color.colorRed));
+        } else if (isAdbWifiLoading()) {
+            textStatus.setText(getString(R.string.service_loading));
+            textStatus.setTextColor(getResources().getColor(R.color.colorYellow));
+        } else {
+            if (isAdbWifiGranted()) {
+                textStatus.setText(getString(R.string.service_enabled));
+                textStatus.setTextColor(getResources().getColor(R.color.colorGreen));
+            } else {
+                textStatus.setText(getString(R.string.service_disabled));
+                textStatus.setTextColor(getResources().getColor(R.color.colorRed));
+            }
         }
 
         if (isPermissionGranted()) {
@@ -107,8 +146,12 @@ public class AuroraActivity extends AppCompatActivity {
         }
     }
 
-    private boolean isSystemApp() {
+    private boolean isAdbWifiGranted() {
         return hasAdbWifi;
+    }
+
+    private boolean isAdbWifiLoading() {
+        return loadingAdbWifi;
     }
 
     private boolean isPermissionGranted() {
@@ -128,6 +171,7 @@ public class AuroraActivity extends AppCompatActivity {
             case 1337: {
                 if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                     init();
+                    tryInitAdbWifi();
                 } else {
                     Toast.makeText(this, "Permission denied", Toast.LENGTH_SHORT).show();
                 }

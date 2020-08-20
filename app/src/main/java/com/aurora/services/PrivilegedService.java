@@ -17,13 +17,16 @@
 
 package com.aurora.services;
 
-import android.app.Service;
+import android.app.*;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
 import android.net.Uri;
 import android.os.IBinder;
 import android.os.RemoteException;
+import android.provider.Settings;
+import androidx.core.app.NotificationCompat;
+import com.aurora.services.activities.AuroraActivity;
 import com.aurora.services.manager.LogManager;
 import com.aurora.services.utils.Log;
 import com.aurora.services.utils.AdbWifi;
@@ -57,6 +60,12 @@ public class PrivilegedService extends Service {
         public void installPackage(Uri packageURI, int flags, String installerPackageName,
                                    IPrivilegedCallback callback) {
             if (!helper.isCallerAllowed()) {
+                try {
+                    PackageInfo info = getApplicationContext().getPackageManager().getPackageArchiveInfo(new File(packageURI.getPath()).getAbsolutePath(), 0);
+                    callback.handleResult(info.packageName, PackageInstaller.STATUS_FAILURE);
+                } catch (RemoteException remoteException) {
+                    remoteException.printStackTrace();
+                }
                 return;
             }
             iPrivilegedCallback = callback;
@@ -67,6 +76,12 @@ public class PrivilegedService extends Service {
         public void installSplitPackage(List<Uri> uriList, int flags, String installerPackageName,
                                         IPrivilegedCallback callback) {
             if (!helper.isCallerAllowed()) {
+                try {
+                    PackageInfo info = getApplicationContext().getPackageManager().getPackageArchiveInfo(new File(uriList.get(0).getPath()).getAbsolutePath(), 0);
+                    callback.handleResult(info.packageName, PackageInstaller.STATUS_FAILURE);
+                } catch (RemoteException remoteException) {
+                    remoteException.printStackTrace();
+                }
                 return;
             }
 
@@ -78,15 +93,28 @@ public class PrivilegedService extends Service {
         public void deletePackage(String packageName, int flags, IPrivilegedCallback callback) {
 
             if (!helper.isCallerAllowed()) {
+                try {
+                    callback.handleResult(packageName, PackageInstaller.STATUS_FAILURE);
+                } catch (RemoteException remoteException) {
+                    remoteException.printStackTrace();
+                }
                 return;
             }
 
             adbWifi = new AdbWifi(PrivilegedService.this);
-            Log.d(ensureCommandSucceeded(adbWifi.exec("pm clear " + packageName)));
-            Log.d(ensureCommandSucceeded(adbWifi.exec("pm uninstall " + packageName)));
-            adbWifi.terminate();
+            try {
+                Log.d(ensureCommandSucceeded(adbWifi.exec("pm clear " + packageName)));
+                Log.d(ensureCommandSucceeded(adbWifi.exec("pm uninstall " + packageName)));
+            } finally {
+                adbWifi.terminate();
+            }
         }
     };
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        return START_STICKY;
+    }
 
     @Override
     public void onCreate() {
@@ -94,6 +122,44 @@ public class PrivilegedService extends Service {
         instance = this;
         helper = new AccessProtectionHelper(this);
         logManager = new LogManager(this);
+        Intent settingsIntent = null;
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            NotificationManager notificationManager = getSystemService(NotificationManager.class);
+
+
+            NotificationChannel channel = new NotificationChannel("service", "Installer service (hide if you want)", NotificationManager.IMPORTANCE_LOW);
+            channel.setDescription("Hide this service as it doesn't show important information");
+            notificationManager.createNotificationChannel(channel);
+
+            channel = new NotificationChannel("main", "Important notifications", NotificationManager.IMPORTANCE_HIGH);
+            channel.setDescription("Important status/error notifications");
+            channel.enableVibration(true);
+            channel.enableLights(true);
+            notificationManager.createNotificationChannel(channel);
+
+
+            settingsIntent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName())
+                    .putExtra(Settings.EXTRA_CHANNEL_ID, "service");
+        } else {
+            settingsIntent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            Uri uri = Uri.fromParts("package", getPackageName(), null);
+            settingsIntent.setData(uri);
+        }
+        PendingIntent pendingIntent =
+                PendingIntent.getActivity(this, 3243333, settingsIntent, PendingIntent.FLAG_CANCEL_CURRENT);
+
+        Notification notification =
+                new NotificationCompat.Builder(this, "service")
+                        .setContentTitle("Running install service (Aurora)")
+                        .setContentText("Click to hide")
+                        .setSmallIcon(R.mipmap.ic_launcher)
+                        .setContentIntent(pendingIntent)
+                        .build();
+
+        startForeground(3242, notification);
     }
 
     @Override
@@ -105,13 +171,14 @@ public class PrivilegedService extends Service {
 
     private void doSplitPackageStage(List<Uri> uriList) {
         adbWifi = new AdbWifi(this);
-        List<File> apkFiles = new ArrayList<>();
-        for (Uri uri : uriList) {
-            apkFiles.add(new File(uri.getPath()));
-        }
-        PackageInfo info = getApplicationContext().getPackageManager().getPackageArchiveInfo(apkFiles.get(0).getAbsolutePath(), 0);
-        String packageName = info.packageName;
+        String packageName = "";
         try {
+            List<File> apkFiles = new ArrayList<>();
+            for (Uri uri : uriList) {
+                apkFiles.add(new File(uri.getPath()));
+            }
+            PackageInfo info = getApplicationContext().getPackageManager().getPackageArchiveInfo(apkFiles.get(0).getAbsolutePath(), 0);
+            packageName = info.packageName;
             int totalSize = 0;
             for (File apkFile : apkFiles)
                 totalSize += apkFile.length();
@@ -144,15 +211,17 @@ public class PrivilegedService extends Service {
             } else {
                 iPrivilegedCallback.handleResult(packageName, PackageInstaller.STATUS_FAILURE);
             }
-        } catch (Exception e) {
-            Log.w(e.getMessage());
+        } catch (Throwable e) {
+            e.printStackTrace();
             try {
                 iPrivilegedCallback.handleResult(packageName, PackageInstaller.STATUS_FAILURE);
             } catch (RemoteException remoteException) {
                 remoteException.printStackTrace();
             }
+            Log.w(e.getMessage());
+        } finally {
+            adbWifi.terminate();
         }
-        adbWifi.terminate();
     }
 
     private String ensureCommandSucceeded(String result) {

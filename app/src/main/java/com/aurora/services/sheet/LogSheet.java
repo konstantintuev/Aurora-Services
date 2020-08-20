@@ -1,5 +1,7 @@
 package com.aurora.services.sheet;
 
+import android.app.Activity;
+import android.content.DialogInterface;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Bundle;

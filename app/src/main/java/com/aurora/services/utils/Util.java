@@ -1,15 +1,12 @@
 package com.aurora.services.utils;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
-
-import com.aurora.services.Constants;
 import com.aurora.services.model.App;
-
+import net.grandcentrix.tray.AppPreferences;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.Calendar;
@@ -17,9 +14,12 @@ import java.util.concurrent.TimeUnit;
 
 public class Util {
 
-    public static SharedPreferences getPrefs(Context context) {
-        return context.getSharedPreferences(
-                Constants.SHARED_PREFERENCES_KEY, Context.MODE_PRIVATE);
+    static AppPreferences prefsInstance;
+    public static AppPreferences getPrefs(Context context) {
+        if (prefsInstance == null) {
+            prefsInstance = new AppPreferences(context);
+        }
+        return prefsInstance;
     }
 
 

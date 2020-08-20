@@ -87,7 +87,9 @@ public class AdbWifi {
             Boolean hasDevice = Boolean.FALSE;
             while ((hasDevice == Boolean.FALSE && tries > 0)
                     || (hasDevice == null && triesNoDevices > 0)) {
-                Thread.sleep(1000);
+                if (!(triesNoDevices == 10 && tries == 125)) {
+                    Thread.sleep(1000);
+                }
                 if (hasDevice == Boolean.FALSE) {
                     tries--;
                 }
