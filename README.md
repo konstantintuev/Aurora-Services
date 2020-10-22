@@ -22,7 +22,7 @@ Aurora Services is currently in developement, but all features listed here work 
 
 # Note
 
-Some huawei phone (ex. Mate Xs) have to enable "Allow ADB debugging in charge only mode" or it will disable adb tcpip when disconected usb cable.
+Some huawei phone (ex. Mate Xs) have to enable "Allow ADB debugging in charge only mode" or it will disable adb tcpip when you remove usb cable.
 
 # Screenshot
 
