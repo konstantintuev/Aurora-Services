@@ -107,7 +107,7 @@ public class AdbWifi {
                 return;
             }
             mIsAcquired = true;
-            mSuProcess = buildProcessWithEnv(context.getFilesDir()+"/adb shell", context.getFilesDir()).start();
+            mSuProcess = buildProcessWithEnv(context.getFilesDir()+"/adb -s 127.0.0.1:5555 shell", context.getFilesDir()).start();
             mWriter = new BufferedWriter(new OutputStreamWriter(mSuProcess.getOutputStream()));
             mReader = new BufferedReader(new InputStreamReader(mSuProcess.getInputStream()));
             mErrorReader = new BufferedReader(new InputStreamReader(mSuProcess.getErrorStream()));
@@ -120,55 +120,66 @@ public class AdbWifi {
         }
     }
 
-    public Boolean getDevices(Context context) throws IOException {
+    private String execCommand(Context context, String command){
         Process proc = null;
         try {
-            proc = buildProcessWithEnv(context.getFilesDir() + "/adb devices", context.getFilesDir()).start();
+            proc = buildProcessWithEnv(context.getFilesDir() + "/" + command, context.getFilesDir()).start();
+            try(InputStream inputStream = proc.getInputStream(); InputStream errorStream = proc.getErrorStream()){
+                BufferedReader stdInput = new BufferedReader(new
+                        InputStreamReader(proc.getInputStream()));
 
-            BufferedReader stdInput = new BufferedReader(new
-                    InputStreamReader(proc.getInputStream()));
+                BufferedReader stdError = new BufferedReader(new
+                        InputStreamReader(proc.getErrorStream()));
 
-            BufferedReader stdError = new BufferedReader(new
-                    InputStreamReader(proc.getErrorStream()));
-
-            StringBuilder out = new StringBuilder();
-// Read the output from the command
-            System.out.println("Here is the standard output of the command:\n");
-            String s = null;
-            while ((s = stdInput.readLine()) != null) {
-                System.out.println(s);
-                out.append(s+"\n");
+                StringBuilder out = new StringBuilder();
+                // Read the output from the command
+                System.out.println("Here is the standard output of the command:\n");
+                String s = null;
+                while ((s = stdInput.readLine()) != null) {
+                    System.out.println(s);
+                    out.append(s + "\n");
+                }
+                // Read any errors from the attempted command
+                System.out.println("Here is the standard error of the command (if any):\n");
+                while ((s = stdError.readLine()) != null) {
+                    System.out.println(s);
+                    out.append(s + "\n");
+                }
+                String res = out.toString();
+                return res;
+            } catch (IOException e) {
+                e.printStackTrace();
             }
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            if (proc != null) {
+                proc.destroy();
+            }
+        }
+        return "";
+    }
 
-// Read any errors from the attempted command
-            System.out.println("Here is the standard error of the command (if any):\n");
-            while ((s = stdError.readLine()) != null) {
-                System.out.println(s);
-                out.append(s+"\n");
-            }
-            String res = out.toString();
-            if (!res.contains("\t")) {
-                return null;
-            }
-            if (res.contains("\tunauthorized")) {
+    public Boolean getDevices(Context context){
+        String targetHost = "127.0.0.1:5555";
+        try {
+            String res1 = execCommand(context, "adb connect " + targetHost);
+
+            String res2 = execCommand(context, "adb devices");
+
+            if (res2.contains(targetHost+"\tunauthorized")) {
                 Process killServer = buildProcessWithEnv(context.getFilesDir() + "/adb kill-server", context.getFilesDir()).start();
                 killServer.waitFor();
                 killServer.destroy();
                 return null;
             }
-            if (res.contains("\tdevice")) {
+            if (res2.contains(targetHost+"\tdevice")) {
                 return true;
             }
         } catch (Throwable ex) {
             ex.printStackTrace();
-        } finally {
-            if (proc != null) {
-                proc.getErrorStream().close();
-                proc.getInputStream().close();
-                proc.getOutputStream().close();
-                proc.destroy();
-            }
         }
+
         return false;
     }
 

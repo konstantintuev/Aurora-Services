@@ -76,3 +76,10 @@ task clearData(type: Exec) {
     commandLine clearDataCommand
 }
 
+task setPermission(type: Exec) {
+    def allowReadCommand = ['adb', 'shell', 'pm', 'grant', 'com.aurora.services', 'android.permission.READ_EXTERNAL_STORAGE']
+    def allowWriteCommand = ['adb', 'shell', 'pm', 'grant', 'com.aurora.services', 'android.permission.WRITE_EXTERNAL_STORAGE']
+    commandLine allowReadCommand
+    commandLine allowWriteCommand
+}
+
