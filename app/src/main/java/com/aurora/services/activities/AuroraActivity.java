@@ -1,12 +1,14 @@
 package com.aurora.services.activities;
 
 import android.Manifest;
-import android.content.DialogInterface;
+import android.app.Dialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.annotation.NonNull;
@@ -20,6 +22,7 @@ import butterknife.ButterKnife;
 import butterknife.OnClick;
 import com.aurora.services.PrivilegedService;
 import com.aurora.services.R;
+import com.aurora.services.dialog.TargetHostConfigDialog;
 import com.aurora.services.sheet.LogSheet;
 import com.aurora.services.sheet.WhitelistSheet;
 import com.aurora.services.utils.AdbWifi;
@@ -34,11 +37,12 @@ public class AuroraActivity extends AppCompatActivity {
 
     private CompositeDisposable disposable = new CompositeDisposable();
 
-    private static AdbWifi adbWifi;
+    private static AdbWifi adbWifi = null;
 
     boolean hasAdbWifi = false;
 
     boolean loadingAdbWifi = true;
+    private Thread adbWifiThread;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -52,7 +56,7 @@ public class AuroraActivity extends AppCompatActivity {
     }
 
     void tryInitAdbWifi() {
-        new Thread(() -> {
+        adbWifiThread = new Thread(() -> {
             try {
                 adbWifi = new AdbWifi(this);
                 String res = adbWifi.exec("echo 'working'");
@@ -73,7 +77,8 @@ public class AuroraActivity extends AppCompatActivity {
             } finally {
                 adbWifi.terminate();
             }
-        }).start();
+        });
+        adbWifiThread.start();
     }
 
     @Override
@@ -107,8 +112,15 @@ public class AuroraActivity extends AppCompatActivity {
 
     @OnClick(R.id.card_status)
     public void requestService() {
-        if (!isAdbWifiLoading() && !isAdbWifiGranted()) {
-            tryInitAdbWifi();
+        wifiInit();
+    }
+
+    @OnClick(R.id.service_config)
+    public void openConfigDialog() {
+        final FragmentManager fragmentManager = getSupportFragmentManager();
+        if (fragmentManager.findFragmentByTag(TargetHostConfigDialog.TAG) == null) {
+            TargetHostConfigDialog dialog = new TargetHostConfigDialog(getApplicationContext());
+            dialog.show(fragmentManager, TargetHostConfigDialog.TAG);
         }
     }
 
@@ -117,6 +129,16 @@ public class AuroraActivity extends AppCompatActivity {
         if (!isPermissionGranted()) {
             askPermissions();
         }
+    }
+
+    public void wifiInit(){
+        loadingAdbWifi = true;
+        hasAdbWifi = false;
+        if(adbWifiThread != null){
+            adbWifiThread.interrupt();
+        }
+        init();
+        tryInitAdbWifi();
     }
 
     private void init() {

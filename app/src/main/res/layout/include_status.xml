@@ -30,11 +30,24 @@
                 android:orientation="vertical"
                 android:padding="@dimen/margin_normal">
 
-                <androidx.appcompat.widget.AppCompatImageView
-                    android:layout_width="@dimen/icon_size_category"
-                    android:layout_height="@dimen/icon_size_category"
-                    android:tint="?android:attr/colorAccent"
-                    app:srcCompat="@drawable/ic_service" />
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    >
+                    <androidx.appcompat.widget.AppCompatImageView
+                        android:layout_width="@dimen/icon_size_category"
+                        android:layout_height="@dimen/icon_size_category"
+                        android:tint="?android:attr/colorAccent"
+                        app:srcCompat="@drawable/ic_service" />
+
+                    <ImageButton
+                        android:id="@+id/service_config"
+                        android:layout_alignParentRight="true"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="#00000000"
+                        android:src="@drawable/ic_baseline_settings_24" />
+                </RelativeLayout>
 
                 <TextView
                     android:layout_width="match_parent"
@@ -49,6 +62,8 @@
                     android:layout_height="wrap_content"
                     android:textAppearance="@style/TextAppearance.Aurora.Line2"
                     tools:text="Enabled" />
+
+
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

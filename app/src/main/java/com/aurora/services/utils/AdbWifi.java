@@ -23,10 +23,15 @@ package com.aurora.services.utils;
 import android.content.Context;
 import android.util.Log;
 
+import com.aurora.services.manager.TargetHostManager;
+import com.aurora.services.model.item.HostItem;
+
 import java.io.*;
 import java.util.Map;
 
 public class AdbWifi {
+    private String targetHost = "127.0.0.1:5555";
+
     private static final String TAG = "SAIRoot";
 
     private Process mSuProcess;
@@ -52,6 +57,8 @@ public class AdbWifi {
     }
 
     public AdbWifi(Context context) {
+        HostItem hostItem = new TargetHostManager(context).getTargetHost();
+        targetHost = hostItem.host + ":" + hostItem.port;
         try {
             File outputFile = new File(context.getFilesDir(), "adb");
             if (!outputFile.exists()) {
@@ -88,7 +95,6 @@ public class AdbWifi {
             while ((hasDevice == Boolean.FALSE && tries > 0)
                     || (hasDevice == null && triesNoDevices > 0)) {
                 if (!(triesNoDevices == 10 && tries == 125)) {
-//                    Thread.sleep(1000);
                     Thread.sleep(1000);
                 }
                 if (hasDevice == Boolean.FALSE) {
@@ -107,7 +113,7 @@ public class AdbWifi {
                 return;
             }
             mIsAcquired = true;
-            mSuProcess = buildProcessWithEnv(context.getFilesDir()+"/adb -s 127.0.0.1:5555 shell", context.getFilesDir()).start();
+            mSuProcess = buildProcessWithEnv(context.getFilesDir()+"/adb -s " +  targetHost + " shell", context.getFilesDir()).start();
             mWriter = new BufferedWriter(new OutputStreamWriter(mSuProcess.getOutputStream()));
             mReader = new BufferedReader(new InputStreamReader(mSuProcess.getInputStream()));
             mErrorReader = new BufferedReader(new InputStreamReader(mSuProcess.getErrorStream()));
@@ -161,7 +167,6 @@ public class AdbWifi {
     }
 
     public Boolean getDevices(Context context){
-        String targetHost = "127.0.0.1:5555";
         try {
             String res1 = execCommand(context, "adb connect " + targetHost);
 

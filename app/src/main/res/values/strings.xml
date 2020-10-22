@@ -19,5 +19,7 @@
     <string name="title_log">Install Log</string>
     <string name="subtitle_log">Recent installs</string>
     <string name="title_log_desc">Your recently installed apps</string>
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
 
 </resources>
