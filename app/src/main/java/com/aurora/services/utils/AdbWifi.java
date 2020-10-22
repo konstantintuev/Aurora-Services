@@ -88,6 +88,7 @@ public class AdbWifi {
             while ((hasDevice == Boolean.FALSE && tries > 0)
                     || (hasDevice == null && triesNoDevices > 0)) {
                 if (!(triesNoDevices == 10 && tries == 125)) {
+//                    Thread.sleep(1000);
                     Thread.sleep(1000);
                 }
                 if (hasDevice == Boolean.FALSE) {
@@ -119,9 +120,10 @@ public class AdbWifi {
         }
     }
 
-    public Boolean getDevices(Context context) {
+    public Boolean getDevices(Context context) throws IOException {
+        Process proc = null;
         try {
-            Process proc = buildProcessWithEnv(context.getFilesDir() + "/adb devices", context.getFilesDir()).start();
+            proc = buildProcessWithEnv(context.getFilesDir() + "/adb devices", context.getFilesDir()).start();
 
             BufferedReader stdInput = new BufferedReader(new
                     InputStreamReader(proc.getInputStream()));
@@ -148,11 +150,24 @@ public class AdbWifi {
             if (!res.contains("\t")) {
                 return null;
             }
+            if (res.contains("\tunauthorized")) {
+                Process killServer = buildProcessWithEnv(context.getFilesDir() + "/adb kill-server", context.getFilesDir()).start();
+                killServer.waitFor();
+                killServer.destroy();
+                return null;
+            }
             if (res.contains("\tdevice")) {
                 return true;
             }
         } catch (Throwable ex) {
             ex.printStackTrace();
+        } finally {
+            if (proc != null) {
+                proc.getErrorStream().close();
+                proc.getInputStream().close();
+                proc.getOutputStream().close();
+                proc.destroy();
+            }
         }
         return false;
     }

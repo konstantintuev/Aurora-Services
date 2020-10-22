@@ -71,3 +71,8 @@ dependencies {
     implementation 'net.grandcentrix.tray:tray:0.12.0'
 }
 
+task clearData(type: Exec) {
+    def clearDataCommand = ['adb', 'shell', 'pm', 'clear', 'com.aurora.services']
+    commandLine clearDataCommand
+}
+
