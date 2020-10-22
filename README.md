@@ -20,6 +20,10 @@ Aurora Services is currently in developement, but all features listed here work 
 
 1. Enable Adb over TCP from a computer - `adb tcpip 5555`
 
+# Note
+
+Some huawei phone (ex. Mate Xs) have to enable "Allow ADB debugging in charge only mode" or it will disable adb tcpip when disconected usb cable.
+
 # Screenshot
 
 <img src="https://i.imgur.com/W7fSBhr.png" height="400"><img src="https://i.imgur.com/Y3gcVtS.png" height="400">
