@@ -6,7 +6,9 @@ Aurora Services is a user application that integrates with the Aurora line of pr
 
 Aurora Services is currently in developement, but all features listed here work without any hiccups.
 
-[***Link to Releases page***](https://github.com/konstantintuev/Aurora-Services/releases)
+[***Link to Releases page***](https://gitlab.com/tcgh/AuroraServices/-/releases)
+
+
 
 # Features
 
