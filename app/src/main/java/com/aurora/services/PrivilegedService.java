@@ -160,6 +160,7 @@ public class PrivilegedService extends Service {
                         .build();
 
         startForeground(3242, notification);
+        android.os.Debug.waitForDebugger();
     }
 
     @Override
@@ -177,8 +178,12 @@ public class PrivilegedService extends Service {
             for (Uri uri : uriList) {
                 apkFiles.add(new File(uri.getPath()));
             }
-            PackageInfo info = getApplicationContext().getPackageManager().getPackageArchiveInfo(apkFiles.get(0).getAbsolutePath(), 0);
-            packageName = info.packageName;
+            for (File apkFile: apkFiles){
+                PackageInfo info = getApplicationContext().getPackageManager().getPackageArchiveInfo(apkFile.getAbsolutePath(), 0);
+                if (info == null){ continue; }
+                packageName = info.packageName;
+                break;
+            }
             int totalSize = 0;
             for (File apkFile : apkFiles)
                 totalSize += apkFile.length();
