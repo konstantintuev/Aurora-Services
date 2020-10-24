@@ -6,7 +6,9 @@ Aurora Services is a user application that integrates with the Aurora line of pr
 
 Aurora Services is currently in developement, but all features listed here work without any hiccups.
 
-[***Link to Releases page***](https://github.com/konstantintuev/Aurora-Services/releases)
+[***Link to Releases page***](https://gitlab.com/tcgh/AuroraServices/-/releases)
+
+
 
 # Features
 
@@ -19,6 +21,10 @@ Aurora Services is currently in developement, but all features listed here work 
 # Installation
 
 1. Enable Adb over TCP from a computer - `adb tcpip 5555`
+
+# Note
+
+Some huawei phone (ex. Mate Xs) have to enable "Allow ADB debugging in charge only mode" or it will disable adb tcpip when you remove usb cable.
 
 # Screenshot
 
