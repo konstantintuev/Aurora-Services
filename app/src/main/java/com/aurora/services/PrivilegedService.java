@@ -77,8 +77,14 @@ public class PrivilegedService extends Service {
                                         IPrivilegedCallback callback) {
             if (!helper.isCallerAllowed()) {
                 try {
-                    PackageInfo info = getApplicationContext().getPackageManager().getPackageArchiveInfo(new File(uriList.get(0).getPath()).getAbsolutePath(), 0);
-                    callback.handleResult(info.packageName, PackageInstaller.STATUS_FAILURE);
+                    String packageName = "";
+                    for (Uri uri: uriList){
+                        PackageInfo info = getApplicationContext().getPackageManager().getPackageArchiveInfo(new File(uri.getPath()).getAbsolutePath(), 0);
+                        if (info == null){ continue; }
+                        packageName = info.packageName;
+                        break;
+                    }
+                    callback.handleResult(packageName, PackageInstaller.STATUS_FAILURE);
                 } catch (RemoteException remoteException) {
                     remoteException.printStackTrace();
                 }
