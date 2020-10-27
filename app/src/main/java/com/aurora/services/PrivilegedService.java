@@ -18,6 +18,9 @@
 package com.aurora.services;
 
 import android.app.*;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
@@ -26,6 +29,8 @@ import android.os.IBinder;
 import android.os.RemoteException;
 import android.provider.Settings;
 import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
+
 import com.aurora.services.activities.AuroraActivity;
 import com.aurora.services.manager.LogManager;
 import com.aurora.services.utils.Log;
@@ -46,6 +51,11 @@ public class PrivilegedService extends Service {
     private AccessProtectionHelper helper;
     private LogManager logManager;
 
+    private NotificationManager notificationManager;
+
+    private NotificationCompat.Builder importantNotificationBuilder = null;
+    private Integer notificationId = 0;
+
     private IPrivilegedCallback iPrivilegedCallback;
 
     private final IPrivilegedService.Stub binder = new IPrivilegedService.Stub() {
@@ -65,6 +75,7 @@ public class PrivilegedService extends Service {
                     callback.handleResult(info.packageName, PackageInstaller.STATUS_FAILURE);
                 } catch (RemoteException remoteException) {
                     remoteException.printStackTrace();
+                    notifyError(remoteException.getMessage());
                 }
                 return;
             }
@@ -87,6 +98,7 @@ public class PrivilegedService extends Service {
                     callback.handleResult(packageName, PackageInstaller.STATUS_FAILURE);
                 } catch (RemoteException remoteException) {
                     remoteException.printStackTrace();
+                    notifyError(remoteException.getMessage());
                 }
                 return;
             }
@@ -111,6 +123,8 @@ public class PrivilegedService extends Service {
             try {
                 Log.d(ensureCommandSucceeded(adbWifi.exec("pm clear " + packageName)));
                 Log.d(ensureCommandSucceeded(adbWifi.exec("pm uninstall " + packageName)));
+            } catch (Throwable e){
+                notifyError(e.getMessage());
             } finally {
                 adbWifi.terminate();
             }
@@ -130,7 +144,7 @@ public class PrivilegedService extends Service {
         logManager = new LogManager(this);
         Intent settingsIntent = null;
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            NotificationManager notificationManager = getSystemService(NotificationManager.class);
+            notificationManager = getSystemService(NotificationManager.class);
 
 
             NotificationChannel channel = new NotificationChannel("service", "Installer service (hide if you want)", NotificationManager.IMPORTANCE_LOW);
@@ -143,11 +157,17 @@ public class PrivilegedService extends Service {
             channel.enableLights(true);
             notificationManager.createNotificationChannel(channel);
 
-
             settingsIntent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName())
                     .putExtra(Settings.EXTRA_CHANNEL_ID, "service");
+
+            ClipboardManager clipboard = (ClipboardManager)
+                    getSystemService(Context.CLIPBOARD_SERVICE);
+            importantNotificationBuilder = new NotificationCompat.Builder(this, channel.getId())
+                    .setSmallIcon(R.mipmap.ic_launcher)
+                    .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                    .setAutoCancel(true);
         } else {
             settingsIntent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
             settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -164,6 +184,8 @@ public class PrivilegedService extends Service {
                         .setSmallIcon(R.mipmap.ic_launcher)
                         .setContentIntent(pendingIntent)
                         .build();
+
+
 
         startForeground(3242, notification);
         android.os.Debug.waitForDebugger();
@@ -221,11 +243,13 @@ public class PrivilegedService extends Service {
                 logManager.addToStats(packageName);
             } else {
                 iPrivilegedCallback.handleResult(packageName, PackageInstaller.STATUS_FAILURE);
+                notifyError(commitSessionResult);
             }
         } catch (Throwable e) {
             e.printStackTrace();
             try {
                 iPrivilegedCallback.handleResult(packageName, PackageInstaller.STATUS_FAILURE);
+                notifyError(e.getMessage());
             } catch (RemoteException remoteException) {
                 remoteException.printStackTrace();
             }
@@ -245,5 +269,24 @@ public class PrivilegedService extends Service {
     public void onDestroy() {
         super.onDestroy();
         adbWifi.terminate();
+    }
+
+    private void notifyError(String error){
+        if (importantNotificationBuilder != null){
+            Intent notificationIntent = new Intent(Intent.ACTION_VIEW);
+            notificationIntent.setData(Uri.parse("https://www.google.com/search?q=" + error));
+            notificationIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            final PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent,
+                    PendingIntent.FLAG_ONE_SHOT);
+            Notification notify = importantNotificationBuilder
+                    .setContentTitle("Aurora Services Error (Tap to search)")
+                    .setContentText(error)
+                    .setStyle(new NotificationCompat.BigTextStyle()
+                            .bigText(error))
+                    .setContentIntent(pendingIntent)
+                    .build();
+            notificationManager.notify(notificationId++, notify);
+        }
+
     }
 }
