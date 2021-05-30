@@ -18,20 +18,18 @@
 package com.aurora.services;
 
 import android.app.*;
-import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
 import android.net.Uri;
+import android.os.Environment;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.provider.Settings;
 import androidx.core.app.NotificationCompat;
-import androidx.core.app.NotificationManagerCompat;
 
-import com.aurora.services.activities.AuroraActivity;
 import com.aurora.services.manager.LogManager;
 import com.aurora.services.utils.Log;
 import com.aurora.services.utils.AdbWifi;
@@ -41,6 +39,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -56,6 +57,8 @@ public class PrivilegedService extends Service {
     private NotificationCompat.Builder importantNotificationBuilder = null;
     private Integer notificationId = 0;
 
+    private ThreadPoolExecutor executor;
+
     private IPrivilegedCallback iPrivilegedCallback;
 
     private final IPrivilegedService.Stub binder = new IPrivilegedService.Stub() {
@@ -69,33 +72,34 @@ public class PrivilegedService extends Service {
         @Override
         public void installPackage(Uri packageURI, int flags, String installerPackageName,
                                    IPrivilegedCallback callback) {
-            if (!helper.isCallerAllowed()) {
-                try {
-                    PackageInfo info = getApplicationContext().getPackageManager().getPackageArchiveInfo(new File(packageURI.getPath()).getAbsolutePath(), 0);
-                    callback.handleResult(info.packageName, PackageInstaller.STATUS_FAILURE);
-                } catch (RemoteException remoteException) {
-                    remoteException.printStackTrace();
-                    notifyError(remoteException.getMessage());
-                }
-                return;
-            }
-            iPrivilegedCallback = callback;
-            doSplitPackageStage(Collections.singletonList(packageURI));
         }
 
         @Override
-        public void installSplitPackage(List<Uri> uriList, int flags, String installerPackageName,
-                                        IPrivilegedCallback callback) {
+        public void installSplitPackage(List<Uri> listURI, int flags, String installerPackageName, IPrivilegedCallback callback) throws RemoteException {
+
+        }
+
+        @Override
+        public void installPackageX(String packageName, Uri uri, int flags, String installerPackageName, IPrivilegedCallback callback) throws RemoteException {
             if (!helper.isCallerAllowed()) {
                 try {
-                    String packageName = "";
-                    for (Uri uri: uriList){
-                        PackageInfo info = getApplicationContext().getPackageManager().getPackageArchiveInfo(new File(uri.getPath()).getAbsolutePath(), 0);
-                        if (info == null){ continue; }
-                        packageName = info.packageName;
-                        break;
-                    }
-                    callback.handleResult(packageName, PackageInstaller.STATUS_FAILURE);
+                    PackageInfo info = getApplicationContext().getPackageManager().getPackageArchiveInfo(new File(uri.getPath()).getAbsolutePath(), 0);
+                    callback.handleResultX(info.packageName, PackageInstaller.STATUS_FAILURE, "Not whitelisted!");
+                } catch (RemoteException remoteException) {
+                    remoteException.printStackTrace();
+                    notifyError(remoteException.getMessage());
+                }
+                return;
+            }
+            iPrivilegedCallback = callback;
+            doSplitPackageStage(Collections.singletonList(uri), packageName);
+        }
+
+        @Override
+        public void installSplitPackageX(String packageName, List<Uri> uriList, int flags, String installerPackageName, IPrivilegedCallback callback) throws RemoteException {
+            if (!helper.isCallerAllowed()) {
+                try {
+                    callback.handleResultX(packageName, PackageInstaller.STATUS_FAILURE, "Not whitelisted!");
                 } catch (RemoteException remoteException) {
                     remoteException.printStackTrace();
                     notifyError(remoteException.getMessage());
@@ -104,30 +108,52 @@ public class PrivilegedService extends Service {
             }
 
             iPrivilegedCallback = callback;
-            doSplitPackageStage(uriList);
+            doSplitPackageStage(uriList, packageName);
         }
 
         @Override
         public void deletePackage(String packageName, int flags, IPrivilegedCallback callback) {
+        }
 
+        @Override
+        public void deletePackageX(String packageName, int flags, String installerPackageName, IPrivilegedCallback callback) throws RemoteException {
             if (!helper.isCallerAllowed()) {
                 try {
-                    callback.handleResult(packageName, PackageInstaller.STATUS_FAILURE);
+                    callback.handleResultX(packageName, PackageInstaller.STATUS_FAILURE, "Not whitelisted!");
                 } catch (RemoteException remoteException) {
                     remoteException.printStackTrace();
                 }
                 return;
             }
 
-            adbWifi = new AdbWifi(PrivilegedService.this);
-            try {
-                Log.d(ensureCommandSucceeded(adbWifi.exec("pm clear " + packageName)));
-                Log.d(ensureCommandSucceeded(adbWifi.exec("pm uninstall " + packageName)));
-            } catch (Throwable e){
-                notifyError(e.getMessage());
-            } finally {
-                adbWifi.terminate();
-            }
+            executor.execute(
+                    () -> {
+                        boolean success = false;
+                        adbWifi = new AdbWifi(PrivilegedService.this);
+                        try {
+                            Log.d(ensureCommandSucceeded(adbWifi.exec("pm clear " + packageName)));
+                            Log.d(ensureCommandSucceeded(adbWifi.exec("pm uninstall " + packageName)));
+                            success = true;
+                        } catch (Throwable e){
+                            notifyError(e.getMessage());
+                        } finally {
+                            adbWifi.terminate();
+                        }
+                        if (success) {
+                            // app reported as installed instead of deleted
+                            /*try {
+                                callback.handleResultX(packageName, PackageInstaller.STATUS_SUCCESS, "Done!");
+                            } catch (RemoteException remoteException) {
+                                remoteException.printStackTrace();
+                            }*/
+                        } else {
+                            try {
+                                callback.handleResultX(packageName, PackageInstaller.STATUS_FAILURE, "Command failed!");
+                            } catch (RemoteException remoteException) {
+                                remoteException.printStackTrace();
+                            }
+                        }
+                    });
         }
     };
 
@@ -142,6 +168,7 @@ public class PrivilegedService extends Service {
         instance = this;
         helper = new AccessProtectionHelper(this);
         logManager = new LogManager(this);
+        executor = new ThreadPoolExecutor(0, 1, 30L, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
         Intent settingsIntent = null;
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             notificationManager = getSystemService(NotificationManager.class);
@@ -198,65 +225,64 @@ public class PrivilegedService extends Service {
 
     private static AdbWifi adbWifi;
 
-    private void doSplitPackageStage(List<Uri> uriList) {
-        adbWifi = new AdbWifi(this);
-        String packageName = "";
-        try {
-            List<File> apkFiles = new ArrayList<>();
-            for (Uri uri : uriList) {
-                apkFiles.add(new File(uri.getPath()));
-            }
-            for (File apkFile: apkFiles){
-                PackageInfo info = getApplicationContext().getPackageManager().getPackageArchiveInfo(apkFile.getAbsolutePath(), 0);
-                if (info == null){ continue; }
-                packageName = info.packageName;
-                break;
-            }
-            int totalSize = 0;
-            for (File apkFile : apkFiles)
-                totalSize += apkFile.length();
+    private void doSplitPackageStage(List<Uri> uriList, String packageName) {
+        executor.execute(
+                () -> {
+                    adbWifi = new AdbWifi(PrivilegedService.this);
+                    try {
+                        List<File> apkFiles = new ArrayList<>();
+                        for (Uri uri : uriList) {
+                            String path = Environment.getExternalStorageDirectory()
+                                    + "/Aurora/Store/Downloads"
+                                    + uri.getPath().split("Aurora/Store/Downloads")[1];
+                            apkFiles.add(new File(path));
+                        }
+                        int totalSize = 0;
+                        for (File apkFile : apkFiles)
+                            totalSize += apkFile.length();
 
-            final String createSessionResult = ensureCommandSucceeded(adbWifi.exec(String.format(Locale.getDefault(),
-                    "pm install-create -i com.android.vending --user %s -r -S %d",
-                    "0",
-                    totalSize)));
+                        final String createSessionResult = ensureCommandSucceeded(adbWifi.exec(String.format(Locale.getDefault(),
+                                "pm install-create -i com.android.vending --user %s -r -S %d",
+                                "0",
+                                totalSize)));
 
-            final Pattern sessionIdPattern = Pattern.compile("(\\d+)");
-            final Matcher sessionIdMatcher = sessionIdPattern.matcher(createSessionResult);
-            boolean found = sessionIdMatcher.find();
-            int sessionId = Integer.parseInt(sessionIdMatcher.group(1));
+                        final Pattern sessionIdPattern = Pattern.compile("(\\d+)");
+                        final Matcher sessionIdMatcher = sessionIdPattern.matcher(createSessionResult);
+                        boolean found = sessionIdMatcher.find();
+                        int sessionId = Integer.parseInt(sessionIdMatcher.group(1));
 
-            for (File apkFile : apkFiles)
-                ensureCommandSucceeded(adbWifi.exec(String.format(Locale.getDefault(),
-                        "cat \"%s\" | pm install-write -S %d %d \"%s\"",
-                        apkFile.getAbsolutePath(),
-                        apkFile.length(),
-                        sessionId,
-                        apkFile.getName())));
+                        for (File apkFile : apkFiles)
+                            ensureCommandSucceeded(adbWifi.exec(String.format(Locale.getDefault(),
+                                    "cat \"%s\" | pm install-write -S %d %d \"%s\"",
+                                    apkFile.getAbsolutePath(),
+                                    apkFile.length(),
+                                    sessionId,
+                                    apkFile.getName())));
 
-            final String commitSessionResult = ensureCommandSucceeded(adbWifi.exec(String.format(Locale.getDefault(),
-                    "pm install-commit %d ",
-                    sessionId)));
+                        final String commitSessionResult = ensureCommandSucceeded(adbWifi.exec(String.format(Locale.getDefault(),
+                                "pm install-commit %d ",
+                                sessionId)));
 
-            if (commitSessionResult.toLowerCase().contains("success")) {
-                iPrivilegedCallback.handleResult(packageName, PackageInstaller.STATUS_SUCCESS);
-                logManager.addToStats(packageName);
-            } else {
-                iPrivilegedCallback.handleResult(packageName, PackageInstaller.STATUS_FAILURE);
-                notifyError(commitSessionResult);
-            }
-        } catch (Throwable e) {
-            e.printStackTrace();
-            try {
-                iPrivilegedCallback.handleResult(packageName, PackageInstaller.STATUS_FAILURE);
-                notifyError(e.getMessage());
-            } catch (RemoteException remoteException) {
-                remoteException.printStackTrace();
-            }
-            Log.w(e.getMessage());
-        } finally {
-            adbWifi.terminate();
-        }
+                        if (commitSessionResult.toLowerCase().contains("success")) {
+                            iPrivilegedCallback.handleResultX(packageName, PackageInstaller.STATUS_SUCCESS, "Done!");
+                            logManager.addToStats(packageName);
+                        } else {
+                            iPrivilegedCallback.handleResultX(packageName, PackageInstaller.STATUS_FAILURE, "Install command failed!");
+                            notifyError(commitSessionResult);
+                        }
+                    } catch (Throwable e) {
+                        e.printStackTrace();
+                        try {
+                            iPrivilegedCallback.handleResultX(packageName, PackageInstaller.STATUS_FAILURE, e.getMessage());
+                            notifyError(e.getMessage());
+                        } catch (RemoteException remoteException) {
+                            remoteException.printStackTrace();
+                        }
+                        Log.w(e.getMessage());
+                    } finally {
+                        adbWifi.terminate();
+                    }
+                });
     }
 
     private String ensureCommandSucceeded(String result) {

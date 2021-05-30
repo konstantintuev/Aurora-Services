@@ -17,7 +17,14 @@
 package com.aurora.services;
 
 interface IPrivilegedCallback {
+    void handleResult(
+        in String packageName,
+        in int returnCode
+    );
 
-    void handleResult(in String packageName, in int returnCode);
-
+    void handleResultX(
+            in String packageName,
+            in int returnCode,
+            in String extra
+    );
 }
