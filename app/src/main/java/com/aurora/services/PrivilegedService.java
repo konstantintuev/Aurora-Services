@@ -24,15 +24,12 @@ import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
 import android.net.Uri;
-import android.os.Environment;
-import android.os.IBinder;
-import android.os.RemoteException;
+import android.os.*;
 import android.provider.Settings;
 import androidx.core.app.NotificationCompat;
-
 import com.aurora.services.manager.LogManager;
-import com.aurora.services.utils.Log;
 import com.aurora.services.utils.AdbWifi;
+import com.aurora.services.utils.Log;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -129,30 +126,37 @@ public class PrivilegedService extends Service {
             executor.execute(
                     () -> {
                         boolean success = false;
-                        adbWifi = new AdbWifi(PrivilegedService.this);
                         try {
+                            adbWifi = new AdbWifi(PrivilegedService.this);
                             Log.d(ensureCommandSucceeded(adbWifi.exec("pm clear " + packageName)));
                             Log.d(ensureCommandSucceeded(adbWifi.exec("pm uninstall " + packageName)));
                             success = true;
                         } catch (Throwable e){
                             notifyError(e.getMessage());
                         } finally {
-                            adbWifi.terminate();
-                        }
-                        if (success) {
-                            // app reported as installed instead of deleted
-                            /*try {
-                                callback.handleResultX(packageName, PackageInstaller.STATUS_SUCCESS, "Done!");
-                            } catch (RemoteException remoteException) {
-                                remoteException.printStackTrace();
-                            }*/
-                        } else {
-                            try {
-                                callback.handleResultX(packageName, PackageInstaller.STATUS_FAILURE, "Command failed!");
-                            } catch (RemoteException remoteException) {
-                                remoteException.printStackTrace();
+                            if (adbWifi != null) {
+                                adbWifi.terminate();
                             }
                         }
+                        boolean finalSuccess = success;
+                        new Handler(Looper.getMainLooper()).post(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (finalSuccess) {
+                                    try {
+                                        callback.handleResultX(packageName, PackageInstaller.STATUS_SUCCESS, "Done!");
+                                    } catch (RemoteException remoteException) {
+                                        remoteException.printStackTrace();
+                                    }
+                                } else {
+                                    try {
+                                        callback.handleResultX(packageName, PackageInstaller.STATUS_FAILURE, "Command failed!");
+                                    } catch (RemoteException remoteException) {
+                                        remoteException.printStackTrace();
+                                    }
+                                }
+                            }
+                        });
                     });
         }
     };
@@ -228,8 +232,8 @@ public class PrivilegedService extends Service {
     private void doSplitPackageStage(List<Uri> uriList, String packageName) {
         executor.execute(
                 () -> {
-                    adbWifi = new AdbWifi(PrivilegedService.this);
                     try {
+                        adbWifi = new AdbWifi(PrivilegedService.this);
                         List<File> apkFiles = new ArrayList<>();
                         for (Uri uri : uriList) {
                             String path = Environment.getExternalStorageDirectory()
@@ -263,24 +267,40 @@ public class PrivilegedService extends Service {
                                 "pm install-commit %d ",
                                 sessionId)));
 
-                        if (commitSessionResult.toLowerCase().contains("success")) {
-                            iPrivilegedCallback.handleResultX(packageName, PackageInstaller.STATUS_SUCCESS, "Done!");
-                            logManager.addToStats(packageName);
-                        } else {
-                            iPrivilegedCallback.handleResultX(packageName, PackageInstaller.STATUS_FAILURE, "Install command failed!");
-                            notifyError(commitSessionResult);
-                        }
+                        new Handler(Looper.getMainLooper()).post(new Runnable() {
+                            @Override
+                            public void run() {
+                                try {
+                                    if (commitSessionResult.toLowerCase().contains("success")) {
+                                        iPrivilegedCallback.handleResultX(packageName, PackageInstaller.STATUS_SUCCESS, "Done!");
+                                        logManager.addToStats(packageName);
+                                    } else {
+                                        iPrivilegedCallback.handleResultX(packageName, PackageInstaller.STATUS_FAILURE, "Install command failed!");
+                                        notifyError(commitSessionResult);
+                                    }
+                                } catch (RemoteException remoteException) {
+                                    remoteException.printStackTrace();
+                                }
+                            }
+                        });
                     } catch (Throwable e) {
-                        e.printStackTrace();
-                        try {
-                            iPrivilegedCallback.handleResultX(packageName, PackageInstaller.STATUS_FAILURE, e.getMessage());
-                            notifyError(e.getMessage());
-                        } catch (RemoteException remoteException) {
-                            remoteException.printStackTrace();
-                        }
-                        Log.w(e.getMessage());
+                        new Handler(Looper.getMainLooper()).post(new Runnable() {
+                            @Override
+                            public void run() {
+                                e.printStackTrace();
+                                try {
+                                    iPrivilegedCallback.handleResultX(packageName, PackageInstaller.STATUS_FAILURE, e.getMessage());
+                                    notifyError(e.getMessage());
+                                } catch (RemoteException remoteException) {
+                                    remoteException.printStackTrace();
+                                }
+                                Log.w(e.getMessage());
+                            }
+                        });
                     } finally {
-                        adbWifi.terminate();
+                        if (adbWifi != null) {
+                            adbWifi.terminate();
+                        }
                     }
                 });
     }
