@@ -19,23 +19,32 @@ package com.aurora.services;
 
 import android.app.*;
 import android.content.ClipboardManager;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.*;
+import android.provider.OpenableColumns;
 import android.provider.Settings;
+import android.util.Base64;
 import androidx.core.app.NotificationCompat;
+import androidx.core.util.Pair;
 import com.aurora.services.manager.LogManager;
-import com.aurora.services.utils.AdbWifi;
+import com.aurora.services.manager.TargetHostManager;
+import com.aurora.services.model.item.HostItem;
 import com.aurora.services.utils.Log;
+import com.tananaev.adblib.AdbConnection;
+import com.tananaev.adblib.AdbCrypto;
+import com.tananaev.adblib.AdbStream;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Locale;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.net.Socket;
+import java.util.*;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -127,15 +136,39 @@ public class PrivilegedService extends Service {
                     () -> {
                         boolean success = false;
                         try {
-                            adbWifi = new AdbWifi(PrivilegedService.this);
-                            Log.d(ensureCommandSucceeded(adbWifi.exec("pm clear " + packageName)));
-                            Log.d(ensureCommandSucceeded(adbWifi.exec("pm uninstall " + packageName)));
-                            success = true;
+                            HostItem hostItem = new TargetHostManager(PrivilegedService.this).getTargetHost();
+                            Socket socket = new Socket(hostItem.host, hostItem.port);
+
+                            File privateKey = new File(getFilesDir() + "/adbkey");
+                            File publicKey = new File(getFilesDir() + "/adbkey.pub");
+                            if (!privateKey.exists()) {
+                                AdbCrypto crypto = AdbCrypto.generateAdbKeyPair(data -> Base64.encodeToString(data, Base64.NO_WRAP));
+                                crypto.saveAdbKeyPair(privateKey, publicKey);
+                            }
+                            AdbCrypto crypto = AdbCrypto.loadAdbKeyPair(data -> Base64.encodeToString(data, Base64.NO_WRAP),
+                                    privateKey,
+                                    publicKey);
+
+                            connection = AdbConnection.create(socket, crypto);
+                            connection.connect();
+                            AdbStream stream = connection.open("shell:"+ "pm clear " + packageName);
+                            stream.read();
+                            stream.close();
+                            stream = connection.open("shell:"+ "pm uninstall " + packageName);
+                            String out = new String(stream.read()).trim();
+                            stream.close();
+                            if (out.toLowerCase().contains("success")) {
+                                success = true;
+                            }
                         } catch (Throwable e){
                             notifyError(e.getMessage());
                         } finally {
-                            if (adbWifi != null) {
-                                adbWifi.terminate();
+                            if (connection != null) {
+                                try {
+                                    connection.close();
+                                } catch (IOException e) {
+                                    e.printStackTrace();
+                                }
                             }
                         }
                         boolean finalSuccess = success;
@@ -219,7 +252,7 @@ public class PrivilegedService extends Service {
 
 
         startForeground(3242, notification);
-        android.os.Debug.waitForDebugger();
+        //android.os.Debug.waitForDebugger();
     }
 
     @Override
@@ -227,45 +260,84 @@ public class PrivilegedService extends Service {
         return binder;
     }
 
-    private static AdbWifi adbWifi;
+    private static AdbConnection connection = null;
 
     private void doSplitPackageStage(List<Uri> uriList, String packageName) {
         executor.execute(
                 () -> {
                     try {
-                        adbWifi = new AdbWifi(PrivilegedService.this);
-                        List<File> apkFiles = new ArrayList<>();
-                        for (Uri uri : uriList) {
-                            String path = Environment.getExternalStorageDirectory()
-                                    + "/Aurora/Store/Downloads"
-                                    + uri.getPath().split("Aurora/Store/Downloads")[1];
-                            apkFiles.add(new File(path));
-                        }
-                        int totalSize = 0;
-                        for (File apkFile : apkFiles)
-                            totalSize += apkFile.length();
+                        HostItem hostItem = new TargetHostManager(this).getTargetHost();
+                        Socket socket = new Socket(hostItem.host, hostItem.port);
 
-                        final String createSessionResult = ensureCommandSucceeded(adbWifi.exec(String.format(Locale.getDefault(),
+                        File privateKey = new File(getFilesDir() + "/adbkey");
+                        File publicKey = new File(getFilesDir() + "/adbkey.pub");
+                        if (!privateKey.exists()) {
+                            AdbCrypto crypto = AdbCrypto.generateAdbKeyPair(data -> Base64.encodeToString(data, Base64.NO_WRAP));
+                            crypto.saveAdbKeyPair(privateKey, publicKey);
+                        }
+                        AdbCrypto crypto = AdbCrypto.loadAdbKeyPair(data -> Base64.encodeToString(data, Base64.NO_WRAP),
+                                privateKey,
+                                publicKey);
+
+                        connection = AdbConnection.create(socket, crypto);
+                        connection.connect();
+                        ContentResolver resolver = getApplicationContext()
+                                .getContentResolver();
+                        //HashMap<filename, Pair<file, size>>
+                        HashMap<String, Pair<ParcelFileDescriptor, Long>> apkFiles = new HashMap<>();
+                        int totalSize = 0;
+                        for (Uri uri : uriList) {
+                            Cursor returnCursor = resolver.query(uri, null, null, null, null);
+                            int nameIndex = returnCursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                            int sizeIndex = returnCursor.getColumnIndex(OpenableColumns.SIZE);
+                            returnCursor.moveToFirst();
+                            String readOnlyMode = "r";
+                            long fileSize = returnCursor.getLong(sizeIndex);
+                            apkFiles.put(returnCursor.getString(nameIndex), Pair.create(resolver.openFileDescriptor(uri, readOnlyMode), fileSize));
+                            totalSize += fileSize;
+                            returnCursor.close();
+                        }
+
+                        AdbStream stream = connection.open("shell:"+ String.format(Locale.getDefault(),
                                 "pm install-create -i com.android.vending --user %s -r -S %d",
                                 "0",
-                                totalSize)));
+                                totalSize));
+                        String createSessionResult = new String(stream.read()).trim();
+                        stream.close();
 
                         final Pattern sessionIdPattern = Pattern.compile("(\\d+)");
                         final Matcher sessionIdMatcher = sessionIdPattern.matcher(createSessionResult);
                         boolean found = sessionIdMatcher.find();
                         int sessionId = Integer.parseInt(sessionIdMatcher.group(1));
 
-                        for (File apkFile : apkFiles)
-                            ensureCommandSucceeded(adbWifi.exec(String.format(Locale.getDefault(),
-                                    "cat \"%s\" | pm install-write -S %d %d \"%s\"",
-                                    apkFile.getAbsolutePath(),
-                                    apkFile.length(),
+                        for (Map.Entry<String, Pair<ParcelFileDescriptor, Long>> apkFile : apkFiles.entrySet()) {
+                            stream = connection.open("exec:"+ String.format(Locale.getDefault(),
+                                    "pm install-write -S %d %d \"%s\"",
+                                    apkFile.getValue().second,
                                     sessionId,
-                                    apkFile.getName())));
+                                    apkFile.getKey()));
 
-                        final String commitSessionResult = ensureCommandSucceeded(adbWifi.exec(String.format(Locale.getDefault(),
+                            FileInputStream fis = new FileInputStream(apkFile.getValue().first.getFileDescriptor());
+                            try {
+                                // larger buffer than 4 * 1024 timeouts adb and it stops the read
+                                // recommended and expected size is 1024
+                                // best performance with low risk of timeout - 2 * 1024
+                                byte[] buf = new byte[2 * 1024];
+                                while (fis.read(buf) > 0) {
+                                    stream.write(buf);
+                                }
+                            } finally {
+                                stream.close();
+                                fis.close();
+                                apkFile.getValue().first.close();
+                            }
+                        }
+
+                        stream = connection.open("shell:"+ String.format(Locale.getDefault(),
                                 "pm install-commit %d ",
-                                sessionId)));
+                                sessionId));
+                        String commitSessionResult = new String(stream.read()).trim();
+                        stream.close();
 
                         new Handler(Looper.getMainLooper()).post(new Runnable() {
                             @Override
@@ -298,23 +370,27 @@ public class PrivilegedService extends Service {
                             }
                         });
                     } finally {
-                        if (adbWifi != null) {
-                            adbWifi.terminate();
+                        if (connection != null) {
+                            try {
+                                connection.close();
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
                         }
                     }
                 });
     }
 
-    private String ensureCommandSucceeded(String result) {
-        if (result == null || result.length() == 0)
-            throw new RuntimeException(adbWifi.readError());
-        return result;
-    }
-
     @Override
     public void onDestroy() {
         super.onDestroy();
-        adbWifi.terminate();
+        if (connection != null) {
+            try {
+                connection.close();
+            } catch (Throwable e) {
+                e.printStackTrace();
+            }
+        }
     }
 
     private void notifyError(String error){

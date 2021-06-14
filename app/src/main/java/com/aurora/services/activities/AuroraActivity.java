@@ -1,21 +1,14 @@
 package com.aurora.services.activities;
 
-import android.Manifest;
-import android.app.Dialog;
 import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Base64;
 import android.util.Log;
 import android.widget.TextView;
-import android.widget.Toast;
-import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
 import androidx.fragment.app.FragmentManager;
 import butterknife.BindView;
 import butterknife.ButterKnife;
@@ -23,10 +16,18 @@ import butterknife.OnClick;
 import com.aurora.services.PrivilegedService;
 import com.aurora.services.R;
 import com.aurora.services.dialog.TargetHostConfigDialog;
+import com.aurora.services.manager.TargetHostManager;
+import com.aurora.services.model.item.HostItem;
 import com.aurora.services.sheet.LogSheet;
 import com.aurora.services.sheet.WhitelistSheet;
-import com.aurora.services.utils.AdbWifi;
+import com.tananaev.adblib.AdbConnection;
+import com.tananaev.adblib.AdbCrypto;
+import com.tananaev.adblib.AdbStream;
 import io.reactivex.disposables.CompositeDisposable;
+
+import java.io.File;
+import java.io.IOException;
+import java.net.Socket;
 
 public class AuroraActivity extends AppCompatActivity {
 
@@ -37,7 +38,7 @@ public class AuroraActivity extends AppCompatActivity {
 
     private CompositeDisposable disposable = new CompositeDisposable();
 
-    private static AdbWifi adbWifi = null;
+    private static AdbConnection connection = null;
 
     boolean hasAdbWifi = false;
 
@@ -50,17 +51,33 @@ public class AuroraActivity extends AppCompatActivity {
         setContentView(R.layout.activity_aurora);
         ButterKnife.bind(this);
         init();
-        if (isPermissionGranted()) {
-            tryInitAdbWifi();
-        }
+        tryInitAdbWifi();
     }
 
     void tryInitAdbWifi() {
         adbWifiThread = new Thread(() -> {
             try {
-                adbWifi = new AdbWifi(this);
-                String res = adbWifi.exec("echo 'working'");
-                if (res != null && res.contains("working")) {
+                HostItem hostItem = new TargetHostManager(this).getTargetHost();
+                Socket socket = new Socket(hostItem.host, hostItem.port);
+
+                File privateKey = new File(getFilesDir() + "/adbkey");
+                File publicKey = new File(getFilesDir() + "/adbkey.pub");
+                if (!privateKey.exists()) {
+                    AdbCrypto crypto = AdbCrypto.generateAdbKeyPair(data -> Base64.encodeToString(data, Base64.NO_WRAP));
+                    crypto.saveAdbKeyPair(privateKey, publicKey);
+                }
+                AdbCrypto crypto = AdbCrypto.loadAdbKeyPair(data -> Base64.encodeToString(data, Base64.NO_WRAP),
+                        privateKey,
+                        publicKey);
+
+                connection = AdbConnection.create(socket, crypto);
+                connection.connect();
+
+                AdbStream stream = connection.open("exec:"+ "echo 'working'");
+                String out = new String(stream.read()).trim();
+                Log.d("ADB", out);
+                stream.close();
+                if (out.equals("working")) {
                     new Handler(Looper.getMainLooper()).post(() -> {
                         hasAdbWifi = true;
                         loadingAdbWifi = false;
@@ -74,8 +91,16 @@ public class AuroraActivity extends AppCompatActivity {
                         init();
                     });
                 }
+            } catch (Throwable th) {
+                th.printStackTrace();
             } finally {
-                adbWifi.terminate();
+                if (connection != null) {
+                    try {
+                        connection.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
             }
         });
         adbWifiThread.start();
@@ -126,9 +151,6 @@ public class AuroraActivity extends AppCompatActivity {
 
     @OnClick(R.id.card_health)
     public void requestPermission() {
-        if (!isPermissionGranted()) {
-            askPermissions();
-        }
     }
 
     public void wifiInit(){
@@ -142,10 +164,7 @@ public class AuroraActivity extends AppCompatActivity {
     }
 
     private void init() {
-        if (!isPermissionGranted()) {
-            textStatus.setText(getString(R.string.service_not_available));
-            textStatus.setTextColor(getResources().getColor(R.color.colorRed));
-        } else if (isAdbWifiLoading()) {
+        if (isAdbWifiLoading()) {
             textStatus.setText(getString(R.string.service_loading));
             textStatus.setTextColor(getResources().getColor(R.color.colorYellow));
         } else {
@@ -158,14 +177,8 @@ public class AuroraActivity extends AppCompatActivity {
             }
         }
 
-        if (isPermissionGranted()) {
-            textPermission.setText(getString(R.string.perm_granted));
-            textPermission.setTextColor(getResources().getColor(R.color.colorGreen));
-        } else {
-            textPermission.setText(getString(R.string.perm_not_granted));
-            textPermission.setTextColor(getResources().getColor(R.color.colorRed));
-            askPermissions();
-        }
+        textPermission.setText(getString(R.string.perm_granted));
+        textPermission.setTextColor(getResources().getColor(R.color.colorGreen));
     }
 
     private boolean isAdbWifiGranted() {
@@ -174,30 +187,5 @@ public class AuroraActivity extends AppCompatActivity {
 
     private boolean isAdbWifiLoading() {
         return loadingAdbWifi;
-    }
-
-    private boolean isPermissionGranted() {
-        return ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                == PackageManager.PERMISSION_GRANTED;
-    }
-
-    private void askPermissions() {
-        ActivityCompat.requestPermissions(this,
-                new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
-                1337);
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        switch (requestCode) {
-            case 1337: {
-                if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    init();
-                    tryInitAdbWifi();
-                } else {
-                    Toast.makeText(this, "Permission denied", Toast.LENGTH_SHORT).show();
-                }
-            }
-        }
     }
 }
