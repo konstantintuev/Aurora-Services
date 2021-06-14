@@ -39,6 +39,7 @@ import com.aurora.services.utils.Log;
 import com.tananaev.adblib.AdbConnection;
 import com.tananaev.adblib.AdbCrypto;
 import com.tananaev.adblib.AdbStream;
+import kotlin.Triple;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -76,6 +77,11 @@ public class PrivilegedService extends Service {
         }
 
         @Override
+        public boolean isMoreMethodImplemented() {
+            return true;
+        }
+
+        @Override
         public void installPackage(Uri packageURI, int flags, String installerPackageName,
                                    IPrivilegedCallback callback) {
         }
@@ -98,11 +104,11 @@ public class PrivilegedService extends Service {
                 return;
             }
             iPrivilegedCallback = callback;
-            doSplitPackageStage(Collections.singletonList(uri), packageName);
+            doSplitPackageStage(Collections.singletonList(uri), null, packageName);
         }
 
         @Override
-        public void installSplitPackageX(String packageName, List<Uri> uriList, int flags, String installerPackageName, IPrivilegedCallback callback) throws RemoteException {
+        public void installSplitPackageMore(String packageName, List<Uri> uriList, int flags, String installerPackageName, IPrivilegedCallback callback, List<String> fileList) {
             if (!helper.isCallerAllowed()) {
                 try {
                     callback.handleResultX(packageName, PackageInstaller.STATUS_FAILURE, "Not whitelisted!");
@@ -114,7 +120,23 @@ public class PrivilegedService extends Service {
             }
 
             iPrivilegedCallback = callback;
-            doSplitPackageStage(uriList, packageName);
+            doSplitPackageStage(uriList, fileList, packageName);
+        }
+
+        @Override
+        public void installSplitPackageX(String packageName, List<Uri> uriList, int flags, String installerPackageName, IPrivilegedCallback callback) {
+            if (!helper.isCallerAllowed()) {
+                try {
+                    callback.handleResultX(packageName, PackageInstaller.STATUS_FAILURE, "Not whitelisted!");
+                } catch (RemoteException remoteException) {
+                    remoteException.printStackTrace();
+                    notifyError(remoteException.getMessage());
+                }
+                return;
+            }
+
+            iPrivilegedCallback = callback;
+            doSplitPackageStage(uriList, null, packageName);
         }
 
         @Override
@@ -262,7 +284,7 @@ public class PrivilegedService extends Service {
 
     private static AdbConnection connection = null;
 
-    private void doSplitPackageStage(List<Uri> uriList, String packageName) {
+    private void doSplitPackageStage(List<Uri> uriList, List<String> fileList, String packageName) {
         executor.execute(
                 () -> {
                     try {
@@ -283,8 +305,8 @@ public class PrivilegedService extends Service {
                         connection.connect();
                         ContentResolver resolver = getApplicationContext()
                                 .getContentResolver();
-                        //HashMap<filename, Pair<file, size>>
-                        HashMap<String, Pair<ParcelFileDescriptor, Long>> apkFiles = new HashMap<>();
+                        //HashMap<filename, Triple<file, size, fullPath>>
+                        HashMap<String, Triple<ParcelFileDescriptor, Long, String>> apkFiles = new HashMap<>();
                         int totalSize = 0;
                         for (Uri uri : uriList) {
                             Cursor returnCursor = resolver.query(uri, null, null, null, null);
@@ -293,7 +315,17 @@ public class PrivilegedService extends Service {
                             returnCursor.moveToFirst();
                             String readOnlyMode = "r";
                             long fileSize = returnCursor.getLong(sizeIndex);
-                            apkFiles.put(returnCursor.getString(nameIndex), Pair.create(resolver.openFileDescriptor(uri, readOnlyMode), fileSize));
+                            String fileName = returnCursor.getString(nameIndex);
+                            String fullFilePath = null;
+                            if (fileList != null && !fileList.isEmpty()) {
+                                for (String file : fileList) {
+                                    if (file.endsWith(fileName)) {
+                                        fullFilePath = file;
+                                        break;
+                                    }
+                                }
+                            }
+                            apkFiles.put(fileName, new Triple(resolver.openFileDescriptor(uri, readOnlyMode), fileSize, fullFilePath));
                             totalSize += fileSize;
                             returnCursor.close();
                         }
@@ -310,27 +342,50 @@ public class PrivilegedService extends Service {
                         boolean found = sessionIdMatcher.find();
                         int sessionId = Integer.parseInt(sessionIdMatcher.group(1));
 
-                        for (Map.Entry<String, Pair<ParcelFileDescriptor, Long>> apkFile : apkFiles.entrySet()) {
-                            stream = connection.open("exec:"+ String.format(Locale.getDefault(),
-                                    "pm install-write -S %d %d \"%s\"",
-                                    apkFile.getValue().second,
-                                    sessionId,
-                                    apkFile.getKey()));
+                        boolean forceUseUri = false;
+                        int runs = 1;
+                        while (runs > 0) {
+                            for (Map.Entry<String, Triple<ParcelFileDescriptor, Long, String>> apkFile : apkFiles.entrySet()) {
+                                if (!forceUseUri && apkFile.getValue().getThird() != null) {
+                                    stream = connection.open("exec:" + String.format(Locale.getDefault(),
+                                            "cat \"%s\" | pm install-write -S %d %d \"%s\"",
+                                            apkFile.getValue().getThird(),
+                                            apkFile.getValue().getSecond(),
+                                            sessionId,
+                                            apkFile.getKey()));
+                                    String result = new String(stream.read()).trim();
+                                    Log.d("pm install-write result: "+result);
+                                    stream.close();
+                                    if (result.contains("Permission denied")) {
+                                        runs++;
+                                        forceUseUri = true;
+                                        break;
+                                    }
+                                    apkFile.getValue().getFirst().close();
+                                } else {
+                                    stream = connection.open("exec:" + String.format(Locale.getDefault(),
+                                            "pm install-write -S %d %d \"%s\"",
+                                            apkFile.getValue().getSecond(),
+                                            sessionId,
+                                            apkFile.getKey()));
 
-                            FileInputStream fis = new FileInputStream(apkFile.getValue().first.getFileDescriptor());
-                            try {
-                                // larger buffer than 4 * 1024 timeouts adb and it stops the read
-                                // recommended and expected size is 1024
-                                // best performance with low risk of timeout - 2 * 1024
-                                byte[] buf = new byte[2 * 1024];
-                                while (fis.read(buf) > 0) {
-                                    stream.write(buf);
+                                    FileInputStream fis = new FileInputStream(apkFile.getValue().getFirst().getFileDescriptor());
+                                    try {
+                                        // larger buffer than 4 * 1024 timeouts adb and it stops the read
+                                        // recommended and expected size is 1024
+                                        // best performance with low risk of timeout - 2 * 1024
+                                        byte[] buf = new byte[2 * 1024];
+                                        while (fis.read(buf) > 0) {
+                                            stream.write(buf);
+                                        }
+                                    } finally {
+                                        stream.close();
+                                        fis.close();
+                                        apkFile.getValue().getFirst().close();
+                                    }
                                 }
-                            } finally {
-                                stream.close();
-                                fis.close();
-                                apkFile.getValue().first.close();
                             }
+                            runs--;
                         }
 
                         stream = connection.open("shell:"+ String.format(Locale.getDefault(),
