@@ -319,7 +319,7 @@ public class PrivilegedService extends Service {
                             String fullFilePath = null;
                             if (fileList != null && !fileList.isEmpty()) {
                                 for (String file : fileList) {
-                                    if (file.endsWith(fileName)) {
+                                    if (new File(file).getName().equals(fileName)) {
                                         fullFilePath = file;
                                         break;
                                     }
