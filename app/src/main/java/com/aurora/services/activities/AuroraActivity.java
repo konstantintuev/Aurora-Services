@@ -81,7 +81,7 @@ public class AuroraActivity extends AppCompatActivity {
                     new Handler(Looper.getMainLooper()).post(() -> {
                         hasAdbWifi = true;
                         loadingAdbWifi = false;
-                        startService(new Intent(this, PrivilegedService.class));
+                        //startService(new Intent(this, PrivilegedService.class));
                         init();
                     });
                 } else {
